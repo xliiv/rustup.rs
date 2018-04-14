@@ -15,6 +15,15 @@ use term2;
 use std::io::{self, Write};
 use help::*;
 
+//TODO::: cleanups
+use std::rc::Rc;
+use fui::Fui;
+use fui::feeders::DirItems;
+use fui::fields::{Autocomplete, Multiselect};
+use fui::form::FormView;
+use fui::utils::cwd;
+use fui::validators;
+
 pub fn main() -> Result<()> {
     try!(::self_update::cleanup_self_updater());
 
@@ -97,10 +106,362 @@ pub fn main() -> Result<()> {
                 cli().gen_completions_to("rustup", shell.parse::<Shell>().unwrap(), &mut io::stdout());
             }
         }
-        (_, _) => unreachable!(),
+        (_, _) => {
+            println!("FUI");
+            let cfg_clone = (*cfg).clone();
+            get_fui(cfg_clone).run();
+        },
     }
 
     Ok(())
+}
+
+fn get_fui(cfg: Cfg) -> Fui<'static, 'static> {
+    //TODO::: what if any command raise error, like `show(&cfg)?` ?
+    // TODO::: review all subcommands of subcommand and compare them to original
+    use fui::fields::*;
+    use fui::validators::*;
+    use regex::Regex;
+    //TODO:: should each subcommands with other subcommands like `override` have another subcommand override-help and display .. help ?
+
+    let cfg_show = cfg.clone();
+    let cfg_toolchain_list = cfg.clone();
+
+    let toolchain_help = "Toolchain name also possible numeric, like '1.8.0'";
+
+    let toolchain_single = Autocomplete::new("toolchain", vec!["stable", "beta", "nightly"])
+        //TODO::: should handle all options from `rustup help toolchain`
+        .help(toolchain_help)
+        // TODO::: allow values outside completition
+        .validator(Required)
+        //TODO::: is this necessery?
+        //.validator(Regex::new("(stable|beta|nightly|\d+\.\d+\.\d)").unwrap())
+        ;
+    let toolchain_multi = Multiselect::new("toolchain", vec!["stable", "beta", "nightly"])
+        //TODO::: should handle all options from `rustup help toolchain`
+        .help(toolchain_help)
+        // TODO::: allow values outside completition
+        .validator(Required)
+        //TODO::: is this necessery?
+        //.validator(Regex::new("(stable|beta|nightly|\d+\.\d+\.\d)").unwrap())
+        ;
+    let toolchain_limit = Autocomplete::new("toolchain", vec!["stable", "beta", "nightly"])
+        //TODO::: should handle all options from `rustup help toolchain`
+        // TODO::: allow values outside completition
+        .help("Limit to specified toolchain (optional)");
+
+    //TODO:: checks if required shold be
+    let targets_target = Multiselect::new("target", vec!["TODO-get-list-from-somewhere"])
+        //TODO::: help
+        .help("")
+        .validator(Required);
+    let targets_toolchains = Autocomplete::new("toolchain", vec!["stable", "beta", "nightly"])
+        //TODO::: should handle all options from `rustup help toolchain`
+        // TODO::: allow values outside completition
+        .help("Limit to specified toolchain (optional)");
+
+    //TODO: allow outside list?
+    //TODO: fill this values
+    let component  = Multiselect::new("component", vec!["TODO-get-list-from-somewhere"])
+        .help("");
+    //TODO: allow outside list?
+    //TODO: fill this values
+    let component_toolchain = Multiselect::new("toolchain", vec!["TODO-get-list-from-somewhere"])
+        .help(toolchain_help);
+    let component_targets = Multiselect::new("target", vec!["TODO-get-list-from-somewhere"])
+        .help("");
+
+    let mut app = Fui::new("rustup")
+        //TODO:::
+        //.arg(Arg::with_name("verbose")
+        //    .help("Enable verbose output")
+        //    .short("v")
+        //    .long("verbose"))
+        .version(common::version())
+        .about("The Rust toolchain installer")
+        .action(
+            "show",
+            "Show the active and installed toolchains",
+            FormView::new(),
+            move |v| {
+                println!("value: {:?}", v);
+                show(&cfg_show);
+            }
+        )
+        .action(
+            //TODO::: update-all, see discussion in `rustup update`
+            "update",
+            "Update Rust toolchains and rustu",
+            FormView::new()
+                .field(toolchain_multi.clone())
+                .field(
+                    Checkbox::new("force").help("Force an update, even if some components are missing")
+                ),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "default",
+            "Set the default toolchain",
+            FormView::new()
+                .field(toolchain_single.clone()),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            //TODO:: check corectness of these toolchains subcommands
+            "toolchain-list",
+            "List installed toolchains",
+            FormView::new(),
+            move |v| {
+                println!("value: {:?}", v);
+                common::list_toolchains(&cfg_toolchain_list);
+            }
+        )
+        .action(
+            "toolchain-install",
+            "Install or update a given toolchain",
+            FormView::new()
+                .field(toolchain_multi.clone()),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "toolchain-uninstall",
+            "Uninstall a toolchain",
+            FormView::new()
+                .field(toolchain_multi.clone()),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "toolchain-link",
+            "Create a custom toolchain by symlinking to a directory",
+            FormView::new()
+                .field(
+                    Text::new("toolchain")
+                        .help("Use the names 'latest' or '2017-04-01'")
+                        .validator(Required)
+                        //TODO::: fix this validation
+                        // "rustup toolchain link -h": Any name is permitted as long as it
+                        // does not fully match an initial substring of a standard release channel
+                        .validator(Regex::new("(latest|\\d{4}-\\d{2}-\\d{2})").unwrap()),
+                )
+                .field(
+                    Autocomplete::new("path", DirItems::new())
+                        .help("directory where the binaries and libraries for the custom toolchain can be found")
+                        .validator(DirExists)
+                ),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            //TODO::: check corectness of these target subcommands
+            "target-list",
+            "List installed and available targets",
+            FormView::new()
+                //TODO::: get values for targets
+                .field(targets_toolchains.clone()),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "target-add",
+            "Add a target to a Rust toolchain",
+            FormView::new()
+                .field(targets_target.clone())
+                .field(targets_toolchains.clone()),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "target-remove",
+            "Remove a target from a Rust toolchain",
+            FormView::new()
+                .field(targets_target.clone())
+                .field(targets_toolchains.clone()),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "component-list",
+            "List installed and available components",
+            FormView::new()
+                .field(component_toolchain.clone()),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            //TODO::: i'm not sure what components do
+            "component-add",
+            "Add a component to a Rust toolchain",
+            FormView::new()
+                .field(component.clone())
+                .field(component_toolchain.clone())
+                .field(component_targets.clone()),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            //TODO::: i'm not sure what components do
+            "component-remove",
+            "Remove a component from a Rust toolchain",
+            FormView::new()
+                .field(component.clone())
+                .field(component_toolchain.clone())
+                .field(component_targets.clone()),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "override-list",
+            "List directory toolchain overrides",
+            FormView::new(),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "override-set",
+            "Set the override toolchain for a directory",
+            FormView::new()
+                .field(toolchain_single.clone()),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "override-unset",
+            "Remove the override toolchain for a directory",
+            //TODO::: relation between --path, --nonesistent, none-of-them, should be expalined
+            FormView::new()
+                .field(
+                    Autocomplete::new("path", DirItems::new())
+                        //TODO::: if i got it this default should be set?
+                        //.default(cwd())
+                        .help("Removes the override toolchain for the specified directory (optional)")
+                        .validator(DirExists)
+                )
+                .field(
+                    Checkbox::new("nonexistent")
+                        .help("Remove override toolchain for all nonexistent directories")
+                ),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "run",
+            "Run a command with an environment configured for a given toolchain",
+            FormView::new()
+                .field(toolchain_single.clone())
+                //TODO::: submit_anything
+                .field(Multiselect::new("command", vec![""]).help("help message"))
+                .field(
+                    Checkbox::new("install")
+                        .help("Install the requested toolchain if needed")
+                )
+                ,
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "which",
+            "Display which binary will be run for a given command",
+            FormView::new()
+                .field(Text::new("command").validator(Required)),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "doc",
+            "Open the documentation for the current toolchain",
+            FormView::new()
+                .field(
+                    Autocomplete::new("page", vec!["doc", "book", "std"])
+                        .initial("doc")
+                        .validator(Required)
+                ),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "self-update",
+            "Download and install updates to rustup",
+            FormView::new(),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "self-uninstall",
+            "Uninstall rustup.",
+            FormView::new()
+                .field(Checkbox::new("no-prompt")),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "self-upgrade-data",
+            "Upgrade the internal data format.",
+            FormView::new(),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "set-default-host",
+            "The triple used to identify toolchains when not specified",
+            FormView::new()
+                .field(Text::new("host-triple").validator(Required)),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        )
+        .action(
+            "completions",
+            "Generate completion scripts for your shell",
+            FormView::new()
+                //TODO: make it more like:
+                //.field(Autocomplete::new("shell", Shell::variants()))
+                .field(Autocomplete::new("shell", vec!["zsh", "bash", "fish", "powershell"])),
+            move |v| {
+                println!("value: {:?}", v);
+            }
+        );
+
+    if cfg!(not(target_os = "windows")) {
+        app = app
+            .action(
+                "man",
+                "View the man page for a given command",
+                FormView::new()
+                    //TODO:: texts could be suggested?
+                    .field(Text::new("command").validator(Required))
+                    .field(toolchain_single)
+                    ,
+                move |v| {
+                    println!("value: {:?}", v);
+                }
+            )
+    }
+
+    app
 }
 
 pub fn cli() -> App<'static, 'static> {
@@ -110,7 +471,7 @@ pub fn cli() -> App<'static, 'static> {
         .after_help(RUSTUP_HELP)
         .setting(AppSettings::VersionlessSubcommands)
         .setting(AppSettings::DeriveDisplayOrder)
-        .setting(AppSettings::SubcommandRequiredElseHelp)
+        //.setting(AppSettings::SubcommandRequiredElseHelp)
         .arg(Arg::with_name("verbose")
             .help("Enable verbose output")
             .short("v")

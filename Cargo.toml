@@ -31,6 +31,7 @@ no-self-update = []
 msi-installed = []
 
 [dependencies]
+fui = { path = "../fui" }
 rustup-dist = { path = "src/rustup-dist" }
 rustup-utils = { path = "src/rustup-utils" }
 download = { path = "src/download" }

@@ -38,9 +38,24 @@ pub enum Notification<'a> {
 }
 
 pub struct Cfg {
-    root_directory: PathBuf,
+    //TODO::: revert it
+    pub root_directory: PathBuf,
     pub dist_server: String,
-    notify_handler: Box<Fn(Notification)>,
+    //TODO::: revert it
+    pub notify_handler: Box<Fn(Notification)>,
+}
+
+use std::clone::Clone;
+impl Clone for Cfg {
+    //TODO::: this needs proper implmentation
+    fn clone(&self) -> Self {
+        let hdlr = Box::new(|n: Notification| {});
+        Cfg::new(
+            PathBuf::new(),
+            "",
+            hdlr,
+        )
+    }
 }
 
 #[derive(Debug)]

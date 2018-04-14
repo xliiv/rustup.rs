@@ -19,6 +19,7 @@ extern crate rustup_utils;
 #[macro_use]
 extern crate error_chain;
 
+extern crate fui;
 extern crate clap;
 extern crate regex;
 extern crate rustup;

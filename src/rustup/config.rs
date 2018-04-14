@@ -35,6 +35,8 @@ impl Display for OverrideReason {
     }
 }
 
+//TODO::: revert it?
+#[derive(Clone)]
 pub struct Cfg {
     pub rustup_dir: PathBuf,
     pub settings_file: SettingsFile,
